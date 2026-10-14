@@ -1,23 +1,38 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 
-#include <GLFW/glfw3.h>
-#include "types.h"
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+#include <stdbool.h>
+#include <cglm/cglm.h>
 
-// GLFW initialization
-void initGLFW(GLFWwindow **window);
 
-// Shader and rendering functions
-unsigned int createShaderProgram();
-unsigned int createCrosshairShader();
-unsigned int createCrosshairVAO();
-void drawWorld(unsigned int shader);
-void drawTileEntities(unsigned int shader);
-void drawCrosshair(unsigned int shader, unsigned int VAO);
+typedef struct vertex_data {
+    vec3 pos;
+    SDL_FColor color;
+    vec2 uv;
+} vertex_data;
 
-// Callbacks
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void mouse_callback(GLFWwindow* window, double xpos, double ypos);
-void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
+typedef struct Model {
+    SDL_GPUBuffer *vertex_buffer;
+    SDL_GPUBuffer *index_buffer;
+    Uint32 num_indecies;
+    SDL_GPUTexture *texture;
+
+} Model;
+
+typedef struct Renderer {
+    SDL_Window *window;
+    SDL_GPUDevice *gpu;
+    SDL_GPUGraphicsPipeline *pipeline;
+    Model *models;
+    SDL_GPUSampler *sampler;
+    SDL_GPUTexture *depth_texture;
+} Renderer;
+
+
+Renderer *renderer_create(SDL_Window *window);
+void renderer_draw(Renderer *renderer, mat4 view_mat);
+void renderer_destroy(Renderer *renderer);
 
 #endif

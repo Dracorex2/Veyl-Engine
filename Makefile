@@ -1,41 +1,35 @@
-# Compiler
+SRC = $(wildcard src/*.c src/*/*.c)
+OBJ = $(SRC:.c=.o)
+OBJ := $(OBJ:src/%=%)
+OBJ := $(addprefix obj/, $(OBJ))
+
 CC = gcc
-CFLAGS = -std=c11 -O2 -Iinclude -Idependencies -Idependencies/onion/Iinclude
-
-# Libraries
-LIBS = -lglfw -ldl -lGL -lm -pthread
-
-# Sources
-SRC = $(wildcard src/*.c)
-OBJ = $(patsubst src/%.c, obj/%.o, $(SRC))
-OBJ += obj/glad.o obj/lodepng.o
+LD = gcc
 
 
-# Exécutable
-TARGET = cube
+CFLAGS = -Wall -Wextra -Iinclude -g
+LDFLAGS = -lSDL3 -lSDL3_image -lcglm -lm
 
-all: $(TARGET)
+NAME = cube_game
 
-$(TARGET): $(OBJ)
-	$(CC) $(LIBS) $(OBJ) -o $@
+all: $(NAME)
+
+$(NAME): $(OBJ)
+	$(LD) $(LDFLAGS) $(OBJ) -o $@
 
 obj/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-obj/glad.o: dependencies/glad/glad.c
-	@mkdir -p obj
-	$(CC) $(CFLAGS) -c $< -o $@
-
-obj/lodepng.o: dependencies/lodepng/lodepng.c
-	@mkdir -p obj
-	$(CC) $(CFLAGS) -c $< -o $@
+shader:
+	glslc shaders/shader.glsl.vert -o build/shader.spv.vert
+	glslc shaders/shader.glsl.frag -o build/shader.spv.frag
 
 clean:
-	rm -rf obj
+	rm -rf obj/
 
 fclean: clean
-	rm -f $(TARGET)
+	rm -rf $(NAME)
 
 re: fclean all
 
