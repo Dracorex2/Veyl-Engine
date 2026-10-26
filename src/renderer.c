@@ -9,17 +9,23 @@
 #include <SDL3_image/SDL_image.h>
 const SDL_FColor WHITE = {1, 1, 1, 1};
 
-static SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, const char *path, SDL_GPUShaderStage stage, Uint32 num_uniform_buf, Uint32 num_samplers) {
-    size_t code_size = 0;
-    void *code = SDL_LoadFile(path, &code_size);
 
+static SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, char *shader_file, Uint32 num_uniform_buf, Uint32 num_samplers) {
+    SDL_GPUShaderStage stage;
+    if (SDL_strstr(shader_file, ".vert"))
+        stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    else if (SDL_strstr(shader_file, ".frag"))
+        stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    char *shader_path = concat(shader_file, ".spv");
+    size_t code_size = 0;
+    void *code = SDL_LoadFile(shader_path, &code_size);
     if (code == NULL) {
-        SDL_Log("Impossible de lire %s : %s", path, SDL_GetError());
+        SDL_Log("Impossible de lire %s : %s", shader_path, SDL_GetError());
         return NULL;
     }
 
     SDL_GPUShaderCreateInfo info = {0};
-    info.code = (const Uint8 *) code;
+    info.code = (const Uint8 *)code;
     info.code_size = code_size;
     info.entrypoint = "main";
     info.format = SDL_GPU_SHADERFORMAT_SPIRV;
@@ -30,7 +36,7 @@ static SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, const char *path, SDL_GPUS
     SDL_GPUShader *shader = SDL_CreateGPUShader(gpu, &info);
 
     if (shader == NULL) {
-        SDL_Log("Impossible de créer le shader %s : %s", path, SDL_GetError());
+        SDL_Log("Impossible de créer le shader %s : %s", shader_file, SDL_GetError());
     }
 
     SDL_free(code);
@@ -40,7 +46,6 @@ static SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, const char *path, SDL_GPUS
 
 static Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
     Model *res = SDL_calloc(1, sizeof(Model));
-
     obj_data data = load_obj(obj_path);
     vertex_data *vertices = SDL_malloc(data.face_count * sizeof(vertex_data));
     Uint16 *indices = SDL_malloc(data.face_count * sizeof(Uint16));
@@ -54,7 +59,8 @@ static Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
         indices[i] = (Uint16)i;
     }
 
-    res->num_indecies = data.face_count;
+    res->mesh.num_indecies = data.face_count;
+    
     size_t vertices_byte_size = data.face_count * sizeof(vertices[0]);
     size_t indices_byte_size  = data.face_count * sizeof(indices[0]);
 
@@ -62,18 +68,21 @@ static Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
     int height;
     int width;
     SDL_GetWindowSize(renderer->window, &width, &height);
-    res->vertex_buffer = SDL_CreateGPUBuffer(renderer->gpu, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_VERTEX, .size = (Uint32)vertices_byte_size});
-    res->index_buffer = SDL_CreateGPUBuffer(renderer->gpu, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_INDEX, .size = (Uint32)indices_byte_size});
+
+    res->mesh.vertex_buffer = SDL_CreateGPUBuffer(renderer->gpu, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_VERTEX, .size = (Uint32)vertices_byte_size});
+    res->mesh.index_buffer = SDL_CreateGPUBuffer(renderer->gpu, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_INDEX, .size = (Uint32)indices_byte_size});
     renderer->depth_texture = SDL_CreateGPUTexture(renderer->gpu, &(SDL_GPUTextureCreateInfo){.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM, .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, .height = height, .width = width, .layer_count_or_depth = 1, .num_levels = 1});
     SDL_GPUTransferBuffer *transfer_buf = SDL_CreateGPUTransferBuffer(renderer->gpu, &(SDL_GPUTransferBufferCreateInfo){.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = (Uint32)(vertices_byte_size + indices_byte_size)});
     void *transfer_mem = SDL_MapGPUTransferBuffer(renderer->gpu, transfer_buf, false);
     memcpy(transfer_mem, vertices, vertices_byte_size);
     memcpy(transfer_mem + vertices_byte_size, indices, indices_byte_size);
     SDL_UnmapGPUTransferBuffer(renderer->gpu, transfer_buf);
+
+
     SDL_GPUCommandBuffer *copy_cmd_buf = SDL_AcquireGPUCommandBuffer(renderer->gpu);
     SDL_GPUCopyPass *copy_pass = SDL_BeginGPUCopyPass(copy_cmd_buf);
-    SDL_UploadToGPUBuffer(copy_pass, &(SDL_GPUTransferBufferLocation){.transfer_buffer = transfer_buf}, &(SDL_GPUBufferRegion){.buffer = res->vertex_buffer, .size = vertices_byte_size}, false);
-    SDL_UploadToGPUBuffer(copy_pass, &(SDL_GPUTransferBufferLocation){.transfer_buffer = transfer_buf, .offset = (Uint32)vertices_byte_size}, &(SDL_GPUBufferRegion){.buffer = res->index_buffer, .size = indices_byte_size}, false);
+    SDL_UploadToGPUBuffer(copy_pass, &(SDL_GPUTransferBufferLocation){.transfer_buffer = transfer_buf}, &(SDL_GPUBufferRegion){.buffer = res->mesh.vertex_buffer, .size = vertices_byte_size}, false);
+    SDL_UploadToGPUBuffer(copy_pass, &(SDL_GPUTransferBufferLocation){.transfer_buffer = transfer_buf, .offset = (Uint32)vertices_byte_size}, &(SDL_GPUBufferRegion){.buffer = res->mesh.index_buffer, .size = indices_byte_size}, false);
     res->texture = IMG_LoadGPUTexture(renderer->gpu, copy_pass, tx_path, NULL, NULL);
     if (!res->texture) {
         SDL_Log("Texture error");
@@ -94,8 +103,8 @@ static bool create_pipeline(Renderer *renderer) {
         {.location = 2, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = (Uint32)offsetof(vertex_data, uv)},
     };
 
-    SDL_GPUShader *vert_shader = load_shader(renderer->gpu, "./build/shader.spv.vert", SDL_GPU_SHADERSTAGE_VERTEX, 1, 0);
-    SDL_GPUShader *frag_shader = load_shader(renderer->gpu, "./build/shader.spv.frag", SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
+    SDL_GPUShader *vert_shader = load_shader(renderer->gpu, "./shaders/build/shader.vert", 1, 0);
+    SDL_GPUShader *frag_shader = load_shader(renderer->gpu, "./shaders/build/shader.frag", 0, 1);
     
     SDL_GPUGraphicsPipelineCreateInfo pipeline_info = {0};
     pipeline_info.vertex_shader = vert_shader;
@@ -218,11 +227,11 @@ void renderer_draw(Renderer *renderer, mat4 view_mat) {
     };
     SDL_GPURenderPass *render_pass = SDL_BeginGPURenderPass(cmd_buf, &color_target, 1, &depth_info);
     SDL_BindGPUGraphicsPipeline(render_pass, renderer->pipeline);
-    SDL_BindGPUVertexBuffers(render_pass, 0, &(SDL_GPUBufferBinding){.buffer = renderer->models->vertex_buffer}, 1);
-    SDL_BindGPUIndexBuffer(render_pass, &(SDL_GPUBufferBinding){.buffer = renderer->models->index_buffer}, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+    SDL_BindGPUVertexBuffers(render_pass, 0, &(SDL_GPUBufferBinding){.buffer = renderer->models->mesh.vertex_buffer}, 1);
+    SDL_BindGPUIndexBuffer(render_pass, &(SDL_GPUBufferBinding){.buffer = renderer->models->mesh.index_buffer}, SDL_GPU_INDEXELEMENTSIZE_16BIT);
     SDL_PushGPUVertexUniformData(cmd_buf, 0, &ubo, sizeof(ubo));
     SDL_BindGPUFragmentSamplers(render_pass, 0, &(SDL_GPUTextureSamplerBinding){.texture = renderer->models->texture, .sampler = renderer->sampler}, 1);
-    SDL_DrawGPUIndexedPrimitives(render_pass, renderer->models->num_indecies, 1, 0, 0, 0);
+    SDL_DrawGPUIndexedPrimitives(render_pass, renderer->models->mesh.num_indecies, 1, 0, 0, 0);
     SDL_EndGPURenderPass(render_pass);
 
     if (!SDL_SubmitGPUCommandBuffer(cmd_buf)) {

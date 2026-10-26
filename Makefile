@@ -22,8 +22,8 @@ obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 shader:
-	glslc shaders/shader.glsl.vert -o build/shader.spv.vert
-	glslc shaders/shader.glsl.frag -o build/shader.spv.frag
+	shadercross shaders/src/shader.vert.hlsl -o shaders/build/shader.vert.spv
+	shadercross shaders/src/shader.frag.hlsl -o shaders/build/shader.frag.spv
 
 clean:
 	rm -rf obj/

@@ -18,7 +18,6 @@ typedef struct Model {
     SDL_GPUBuffer *index_buffer;
     Uint32 num_indecies;
     SDL_GPUTexture *texture;
-
 } Model;
 
 typedef struct Renderer {
@@ -30,6 +29,7 @@ typedef struct Renderer {
     SDL_GPUTexture *depth_texture;
 } Renderer;
 
+SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, char *shader_file, Uint32 num_uniform_buf, Uint32 num_samplers);
 
 Renderer *renderer_create(SDL_Window *window);
 void renderer_draw(Renderer *renderer, mat4 view_mat);

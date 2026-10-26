@@ -7,6 +7,7 @@ typedef struct Camera {
     vec3 pos;
     vec3 target;
 } Camera;
+
 typedef struct Look {
     float yaw;
     float pitch;
@@ -66,7 +67,6 @@ void update_camera() {
     
     glm_vec3_add(camera.pos, motion, camera.pos);
     glm_vec3_add(camera.pos, foreward, camera.target);
-    //SDL_Log("[%f, %f]", look.yaw, look.pitch);
 }
 
 int main(void) {
