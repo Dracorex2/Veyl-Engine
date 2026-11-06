@@ -69,6 +69,8 @@ void update_camera() {
     glm_vec3_add(camera.pos, foreward, camera.target);
 }
 
+
+
 int main(void) {
 
     SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
@@ -80,20 +82,31 @@ int main(void) {
 
     SDL_Window *window = SDL_CreateWindow("Mon moteur voxel", 1280, 720, SDL_WINDOW_RESIZABLE);
     SDL_SetWindowRelativeMouseMode(window, true);
-
     if (!window) {
-        SDL_Log("Erreur fenêtre : %s", SDL_GetError());
-        SDL_Quit();
+        //SDL_Log("Erreur fenêtre : %s", SDL_GetError());
+        //SDL_Quit();
         return 1;
     }
 
     Renderer *renderer = renderer_create(window);
-
     if (!renderer) {
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+        //SDL_DestroyWindow(window);
+        //SDL_Quit();
         return 1;
     }
+
+    create_pipeline(renderer);
+
+    renderer->sampler = SDL_CreateGPUSampler(renderer->gpu, &(SDL_GPUSamplerCreateInfo){
+        .min_filter = SDL_GPU_FILTER_LINEAR,
+        .mag_filter = SDL_GPU_FILTER_LINEAR
+    });
+    if (!renderer->sampler) {
+        SDL_Log("sampler error");
+        return 1;
+    }
+
+    renderer->models = load_model(renderer, "assets/sedan-sports.obj", "assets/colormap.png");
 
     bool running = true;
     SDL_Event event;

@@ -1,6 +1,5 @@
 #include "obj.h"
 
-
 // Agrandit un tableau dynamique (x2) si nécessaire
 static void *grow(void *ptr, size_t *cap, size_t count, size_t elem_size) {
     if (count < *cap)

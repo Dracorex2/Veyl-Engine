@@ -10,13 +10,46 @@
 const SDL_FColor WHITE = {1, 1, 1, 1};
 
 
+#include <SDL3/SDL.h>
+
+#include <SDL3/SDL.h>
+
+/* Concatène `count` chaînes.
+ * Retourne une chaîne allouée avec SDL_malloc (à libérer avec SDL_free),
+ * ou NULL en cas d'erreur. Les entrées NULL sont traitées comme "". */
+#include <SDL3/SDL.h>
+
+/* Concatène s1 et s2 dans une nouvelle chaîne allouée avec SDL_malloc
+ * (à libérer avec SDL_free). Retourne NULL en cas d'erreur.
+ * Une entrée NULL est traitée comme "". */
+char *my_strjoin(const char *s1, const char *s2)
+{
+    const size_t len1 = s1 ? SDL_strlen(s1) : 0;
+    const size_t len2 = s2 ? SDL_strlen(s2) : 0;
+
+    char *result = (char *)SDL_malloc(len1 + len2 + 1);
+    if (!result) {
+        return NULL;
+    }
+
+    if (len1) {
+        SDL_memcpy(result, s1, len1);
+    }
+    if (len2) {
+        SDL_memcpy(result + len1, s2, len2);
+    }
+    result[len1 + len2] = '\0';
+
+    return result;
+}
+
 static SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, char *shader_file, Uint32 num_uniform_buf, Uint32 num_samplers) {
     SDL_GPUShaderStage stage;
     if (SDL_strstr(shader_file, ".vert"))
         stage = SDL_GPU_SHADERSTAGE_VERTEX;
     else if (SDL_strstr(shader_file, ".frag"))
         stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    char *shader_path = concat(shader_file, ".spv");
+    char *shader_path = my_strjoin(shader_file, ".spv");
     size_t code_size = 0;
     void *code = SDL_LoadFile(shader_path, &code_size);
     if (code == NULL) {
@@ -44,7 +77,7 @@ static SDL_GPUShader *load_shader(SDL_GPUDevice *gpu, char *shader_file, Uint32 
     return shader;
 }
 
-static Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
+Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
     Model *res = SDL_calloc(1, sizeof(Model));
     obj_data data = load_obj(obj_path);
     vertex_data *vertices = SDL_malloc(data.face_count * sizeof(vertex_data));
@@ -71,7 +104,6 @@ static Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
 
     res->mesh.vertex_buffer = SDL_CreateGPUBuffer(renderer->gpu, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_VERTEX, .size = (Uint32)vertices_byte_size});
     res->mesh.index_buffer = SDL_CreateGPUBuffer(renderer->gpu, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_INDEX, .size = (Uint32)indices_byte_size});
-    renderer->depth_texture = SDL_CreateGPUTexture(renderer->gpu, &(SDL_GPUTextureCreateInfo){.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM, .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, .height = height, .width = width, .layer_count_or_depth = 1, .num_levels = 1});
     SDL_GPUTransferBuffer *transfer_buf = SDL_CreateGPUTransferBuffer(renderer->gpu, &(SDL_GPUTransferBufferCreateInfo){.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = (Uint32)(vertices_byte_size + indices_byte_size)});
     void *transfer_mem = SDL_MapGPUTransferBuffer(renderer->gpu, transfer_buf, false);
     memcpy(transfer_mem, vertices, vertices_byte_size);
@@ -96,37 +128,46 @@ static Model *load_model(Renderer *renderer, char *obj_path, char *tx_path) {
     return res;
 }
 
-static bool create_pipeline(Renderer *renderer) {   
+bool create_pipeline(Renderer *renderer) {   
+    SDL_GPUShader *vert_shader = load_shader(renderer->gpu, "./shaders/build/shader.vert", 1, 0);
+    SDL_GPUShader *frag_shader = load_shader(renderer->gpu, "./shaders/build/shader.frag", 0, 1);
+
     SDL_GPUVertexAttribute vertex_attrs[] = {
         {.location = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = (Uint32)offsetof(vertex_data, pos)},
         {.location = 1, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = (Uint32)offsetof(vertex_data, color)},
         {.location = 2, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = (Uint32)offsetof(vertex_data, uv)},
     };
 
-    SDL_GPUShader *vert_shader = load_shader(renderer->gpu, "./shaders/build/shader.vert", 1, 0);
-    SDL_GPUShader *frag_shader = load_shader(renderer->gpu, "./shaders/build/shader.frag", 0, 1);
-    
-    SDL_GPUGraphicsPipelineCreateInfo pipeline_info = {0};
-    pipeline_info.vertex_shader = vert_shader;
-    pipeline_info.fragment_shader = frag_shader;
-    pipeline_info.vertex_input_state.num_vertex_buffers = 1;
-    pipeline_info.vertex_input_state.vertex_buffer_descriptions = &(SDL_GPUVertexBufferDescription){
-        .slot = 0,
-        .pitch = sizeof(vertex_data),
-    };
-    pipeline_info.vertex_input_state.num_vertex_attributes = (Uint32)(sizeof(vertex_attrs) / sizeof(vertex_attrs[0]));
-    pipeline_info.vertex_input_state.vertex_attributes = vertex_attrs;
-    pipeline_info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-    pipeline_info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
-    pipeline_info.depth_stencil_state.enable_depth_test = true;
-    pipeline_info.depth_stencil_state.enable_depth_write = true;
-    pipeline_info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
-    pipeline_info.target_info.num_color_targets = 1;
-    pipeline_info.target_info.color_target_descriptions = &(SDL_GPUColorTargetDescription){.format = SDL_GetGPUSwapchainTextureFormat(renderer->gpu, renderer->window)};
-    pipeline_info.target_info.has_depth_stencil_target = 1;
-    pipeline_info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
-    
-    renderer->pipeline = SDL_CreateGPUGraphicsPipeline(renderer->gpu, &pipeline_info);
+    renderer->pipeline = SDL_CreateGPUGraphicsPipeline(renderer->gpu, &(SDL_GPUGraphicsPipelineCreateInfo){
+        .vertex_shader = vert_shader,
+        .fragment_shader = frag_shader,
+        .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+        .vertex_input_state = (SDL_GPUVertexInputState){
+            .num_vertex_buffers = 1,
+            .vertex_buffer_descriptions = &(SDL_GPUVertexBufferDescription){
+                .slot = 0,
+                .pitch = sizeof(vertex_data)
+            },
+            .num_vertex_attributes = (Uint32)(sizeof(vertex_attrs) / sizeof(vertex_attrs[0])),
+            .vertex_attributes = vertex_attrs
+        },
+        .depth_stencil_state = (SDL_GPUDepthStencilState){
+            .enable_depth_test = true,
+            .enable_depth_write = true,
+            .compare_op = SDL_GPU_COMPAREOP_LESS
+        },
+        .rasterizer_state = (SDL_GPURasterizerState){
+            .cull_mode = SDL_GPU_CULLMODE_BACK
+        },
+        .target_info = (SDL_GPUGraphicsPipelineTargetInfo){
+            .num_color_targets = 1,
+            .color_target_descriptions = &(SDL_GPUColorTargetDescription){
+                .format = SDL_GetGPUSwapchainTextureFormat(renderer->gpu, renderer->window),
+            },
+            .has_depth_stencil_target = true,
+            .depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM
+        }
+    });
     
     if (renderer->pipeline == NULL) {
         SDL_Log("Impossible de créer le pipeline : %s", SDL_GetError());
@@ -135,12 +176,7 @@ static bool create_pipeline(Renderer *renderer) {
     
     SDL_ReleaseGPUShader(renderer->gpu, vert_shader);
     SDL_ReleaseGPUShader(renderer->gpu, frag_shader);
-    
-    renderer->sampler = SDL_CreateGPUSampler(renderer->gpu, &(SDL_GPUSamplerCreateInfo){});
-    if (!renderer->sampler) {
-        SDL_Log("sampler error");
-        return 1;
-    }
+
     return true;
 }
 
@@ -156,24 +192,38 @@ Renderer *renderer_create(SDL_Window *window)
     renderer->window = window;
 
     renderer->gpu = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, NULL);
-
     if (renderer->gpu == NULL) {
         SDL_Log("Impossible de créer le GPU : %s", SDL_GetError());
-        renderer_destroy(renderer);
+        //renderer_destroy(renderer);
         return NULL;
     }
 
     if (!SDL_ClaimWindowForGPUDevice(renderer->gpu, window)) {
         SDL_Log("Impossible d'associer la fenêtre au GPU : %s", SDL_GetError());
-        renderer_destroy(renderer);
+        //renderer_destroy(renderer);
         return NULL;
     }
 
-    if (!create_pipeline(renderer)) {
-        renderer_destroy(renderer);
+    if (!SDL_SetGPUSwapchainParameters(renderer->gpu, renderer->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR, SDL_GPU_PRESENTMODE_VSYNC)) {
+        SDL_Log("Impossible de mettre les paramettre du swapchain : %s", SDL_GetError());
+        //renderer_destroy(renderer);
         return NULL;
     }
-    renderer->models = load_model(renderer, "assets/sedan-sports.obj", "assets/colormap.png");
+
+    SDL_GetWindowSize(renderer->window, &renderer->window_size_w, &renderer->window_size_h);
+    renderer->depth_texture_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    renderer->depth_texture = SDL_CreateGPUTexture(renderer->gpu, &(SDL_GPUTextureCreateInfo){
+        .format = SDL_GPU_TEXTUREFORMAT_D24_UNORM,
+        .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
+        .height = renderer->window_size_h, .width = renderer->window_size_w,
+        .layer_count_or_depth = 1,
+        .num_levels = 1
+    });
+    if (renderer->depth_texture == NULL) {
+        SDL_Log("Depth_Texture error : %s", SDL_GetError());
+        return NULL;
+    }
+    
 
     return renderer;
 }
@@ -187,7 +237,6 @@ void renderer_draw(Renderer *renderer, mat4 view_mat) {
     }
     
     SDL_GPUTexture *swapchain_tex = NULL;
-    
     if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd_buf, renderer->window, &swapchain_tex, NULL, NULL)) {
         SDL_CancelGPUCommandBuffer(cmd_buf);
         return;
